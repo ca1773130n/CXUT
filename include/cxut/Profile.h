@@ -1,10 +1,9 @@
 #pragma once
 
+#include "Pattern.h"
+#include <glog/logging.h>
 #include <iostream>
 #include <map>
-
-#include "Debug.h"
-#include "Pattern.h"
 
 #if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
 #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
@@ -19,10 +18,9 @@
 #define PROFILE_PAUSE(name) StopWatch::getInstance()->pauseTimer(name);
 #define PROFILE_STAT() StopWatch::getInstance()->printResults();
 
-namespace mc {
-	namespace utils {
+namespace cxut {
 #if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
-		struct timezone {
+	struct timezone {
 			int tz_minuteswest;
 			int tz_dsttime;
 		};
@@ -63,84 +61,84 @@ namespace mc {
 		}
 #endif
 
-		class Timer {
-		public:
-			Timer(std::string name) {
-				mName.assign(name);
-				reset();
+	class Timer {
+	public:
+		Timer(std::string name) {
+			mName.assign(name);
+			reset();
+		}
+
+		void reset(void) {
+			gettimeofday(&mStartTime, NULL);
+		}
+
+		float getElapsed(bool print = false) {
+			long mSec = 0;
+			gettimeofday(&mCurTime, NULL);
+			mSec = (mCurTime.tv_sec - mStartTime.tv_sec) * 1000000 + (mCurTime.tv_usec - mStartTime.tv_usec);
+			if (print)
+				LOG(INFO) << "Time elapsed for [" << mName << "] : " << mSec / 1000.f << "msec";
+			return mSec / 1000.f;
+		}
+
+	protected:
+		struct timeval mStartTime;
+		struct timeval mCurTime;
+		size_t mElapsedMsec;
+		std::string mName;
+	};
+
+	class StopWatch;
+	class StopWatch : public ISingleton<StopWatch> {
+	public:
+		StopWatch() {}
+		~StopWatch() {
+			for (auto t : mTimers) {
+				delete t.second;
 			}
+		}
 
-			void reset(void) {
-				gettimeofday(&mStartTime, NULL);
+		void startTimer(const char *name) {
+			std::string strName(name);
+			if (mTimers[strName] != NULL) {
+				mTimers[strName]->reset();
 			}
-
-			float getElapsed(bool print = false) {
-				long mSec = 0;
-				gettimeofday(&mCurTime, NULL);
-				mSec = (mCurTime.tv_sec - mStartTime.tv_sec) * 1000000 + (mCurTime.tv_usec - mStartTime.tv_usec);
-				if (print) MLOGD("Time elapsed for [%s] : %.8f msec\n", mName, mSec / 1000.f);
-				return mSec / 1000.f;
+			else {
+				Timer *newTimer = new Timer(strName);
+				mTimers[strName] = newTimer;
 			}
+		}
 
-		protected:
-			struct timeval mStartTime;
-			struct timeval mCurTime;
-			size_t mElapsedMsec;
-			std::string mName;
-		};
+		void pauseTimer(const char *name) {
+			std::string strName(name);
+			mResults[strName] += mTimers[strName]->getElapsed();
+		}
 
-		class StopWatch;
-		class StopWatch : public ISingleton<StopWatch> {
-		public:
-			StopWatch() {}
-			~StopWatch() {
-				for (auto t : mTimers) {
-					delete t.second;
-				}
-			}
+		void stopTimer(const char *name) {
+			std::string strName(name);
+			mResults[strName] = mTimers[strName]->getElapsed();
+		}
 
-            void startTimer(const char *name) {
-                std::string strName(name);
-                if (mTimers[strName] != NULL) {
-                    mTimers[strName]->reset();
-                }
-                else {
-                    Timer *newTimer = new Timer(strName);
-                    mTimers[strName] = newTimer;
-                }
-            }
+		void printResults(bool flush = true) {
+			for (auto t : mResults)
+				LOG(INFO) << t.first.c_str() << " : [" << t.second << "] ms";
+			std::cout << std::flush;
+		}
 
-            void pauseTimer(const char *name) {
-                std::string strName(name);
-                mResults[strName] += mTimers[strName]->getElapsed();
-            }
+	protected:
+		std::map<std::string, Timer *> mTimers;
+		std::map<std::string, float> mResults;
+	};
 
-            void stopTimer(const char *name) {
-                std::string strName(name);
-                mResults[strName] = mTimers[strName]->getElapsed();
-            }
+	class AutoTimer : public Timer {
+	public:
+		AutoTimer(char *name) : Timer(name) {
+		}
 
-            void printResults(bool flush = true) {
-                for (auto t : mResults)
-                    MLOGD("%s : [%.3f] ms\n", t.first.c_str(), t.second);
-                std::cout << std::flush;
-            }
+		~AutoTimer() {
+			getElapsed();
+		}
 
-		protected:
-			std::map<std::string, Timer *> mTimers;
-			std::map<std::string, float> mResults;
-		};
-
-		class AutoTimer : public Timer {
-		public:
-			AutoTimer(char *name) : Timer(name) {
-			}
-
-			~AutoTimer() {
-				getElapsed();
-			}
-
-		protected:
-		};
-	}
+	protected:
+	};
 }
